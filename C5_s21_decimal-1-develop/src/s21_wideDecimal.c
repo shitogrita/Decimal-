@@ -6,27 +6,27 @@ void s21_printWideDecimal(s21_wideDecimal number) {
   }
 
   printf("\n");
-}  // старшие -> младшие // no leaks
+}
 
 s21_wideDecimal s21_decimalToWideDecimal(s21_decimal number) {
-  s21_wideDecimal wideNumber = {{0, 0, 0, 0, 0, 0, 0, 0}};
+  s21_wideDecimal wideNumber = {0};
 
   for (int i = 0; i < 3; ++i) {
     wideNumber.bits[i] = (unsigned)number.bits[i];
   }
 
   return wideNumber;
-}  // no leaks
+}
 
 s21_decimal s21_WideDecimalToDecimal(s21_wideDecimal number) {
-  s21_decimal result = {{0, 0, 0, 0}};
+  s21_decimal result = {0};
 
   for (int i = 0; i < 3; ++i) {
     result.bits[i] = (int)number.bits[i];
   }
 
   return result;
-}  // no leaks
+}
 
 s21_wideDecimal s21_wideDecimalPowerTen(s21_wideDecimal number, int power) {
   s21_wideDecimal result = number;
@@ -35,7 +35,7 @@ s21_wideDecimal s21_wideDecimalPowerTen(s21_wideDecimal number, int power) {
     s21_wideDecimal valueShift3 = s21_BinaryWideshiftL(result, 3);
     s21_wideDecimal valueShift1 = s21_BinaryWideshiftL(result, 1);
 
-    result = s21_simpleAddWideDecimal(valueShift3, valueShift1);
+    result = s21_simpleAddWideDecimal(valueShift3, valueShift1, NULL);
   }
 
   return result;
@@ -47,11 +47,11 @@ s21_wideDecimal s21_wideDecimalPowerTenDiv(s21_wideDecimal number, int power) {
 
     if (remain > 5) {
       s21_wideDecimal one = {{1, 0, 0, 0, 0, 0, 0, 0}};
-      number = s21_simpleAddWideDecimal(number, one);
+      number = s21_simpleAddWideDecimal(number, one, NULL);
     } else if (remain == 5) {
       if (s21_isSetBit(number.bits[0], 0)) {
         s21_wideDecimal one = {{1, 0, 0, 0, 0, 0, 0, 0}};
-        number = s21_simpleAddWideDecimal(number, one);
+        number = s21_simpleAddWideDecimal(number, one, NULL);
       }
     }
   }
@@ -59,7 +59,7 @@ s21_wideDecimal s21_wideDecimalPowerTenDiv(s21_wideDecimal number, int power) {
   return number;
 }  // no leaks
 
-uint64_t s21_getRemain(s21_wideDecimal *number) {  // может функция и не нужна
+uint64_t s21_getRemain(s21_wideDecimal *number) {
   uint64_t remain = 0;
 
   for (int i = 7; i >= 0; --i) {
@@ -73,7 +73,8 @@ uint64_t s21_getRemain(s21_wideDecimal *number) {  // может функция 
 }
 
 s21_wideDecimal s21_simpleAddWideDecimal(s21_wideDecimal value_1,
-                                         s21_wideDecimal value_2) {
+                                         s21_wideDecimal value_2,
+                                         int *overflow) {
   int carry = 0;
   s21_wideDecimal result = {{0, 0, 0, 0, 0, 0, 0, 0}};
 
@@ -86,21 +87,67 @@ s21_wideDecimal s21_simpleAddWideDecimal(s21_wideDecimal value_1,
     result.bits[index / 32] |= s21_isSetBit(resultBit, 0) << index % 32;
   }
 
+  if (overflow) *overflow = carry;
+
   return result;
-}  // no leaks
+}
+
+s21_wideDecimal s21_simpleSubWideDecimal(s21_wideDecimal reduced,
+                                         s21_wideDecimal subtrahend,
+                                         int *sign) {
+  s21_wideDecimal wide_result = {0};
+  int overflow = 0;
+
+  s21_invert_wideDecimal(&subtrahend);
+  wide_result = s21_simpleAddWideDecimal(reduced, subtrahend, &overflow);
+
+  if (overflow) {
+    s21_wideDecimal one_wideDecimal = {{1, 0, 0, 0, 0, 0, 0, 0}};
+
+    wide_result =
+        s21_simpleAddWideDecimal(wide_result, one_wideDecimal, &overflow);
+
+    if (sign) *sign = 0;
+  } else {
+    s21_invert_wideDecimal(&wide_result);
+
+    if (sign) *sign = 1;
+  }
+
+  return wide_result;
+}
 
 s21_wideDecimal s21_simpleMulWideDecimal(s21_wideDecimal value_1,
                                          s21_wideDecimal value_2) {
-  s21_wideDecimal wideResult = {{0, 0, 0, 0, 0, 0, 0, 0}};
+  s21_wideDecimal wideResult = {0};
 
   for (int index = 0; index < 256; ++index) {
     if (s21_isSetBit(value_1.bits[index / 32], index % 32)) {
       s21_wideDecimal temp = s21_BinaryWideshiftL(value_2, index);
-      wideResult = s21_simpleAddWideDecimal(wideResult, temp);
+      wideResult = s21_simpleAddWideDecimal(wideResult, temp, NULL);
     }
   }
 
   return wideResult;
+}
+
+s21_wideDecimal s21_simpleDimple(s21_wideDecimal value_1,
+                                 s21_wideDecimal value_2) {
+  s21_wideDecimal wideResInt = {0};
+  s21_wideDecimal wideResRemain = {0};
+
+  for (int i = 255; i >= 0; --i) {
+    wideResRemain = s21_BinaryWideshiftL(wideResRemain, 1);
+    wideResRemain.bits[0] |= s21_isSetBit(value_1.bits[i / 32], i % 32);
+
+    if (s21_greatEqualWide(wideResRemain, value_2)) {
+      wideResRemain = s21_simpleSubWideDecimal(wideResRemain, value_2, NULL);
+
+      wideResInt.bits[i / 32] |= s21_setBit(wideResInt.bits[i / 32], i % 32);
+    }
+  }
+
+  return wideResInt;
 }
 
 s21_wideDecimal s21_BinaryWideshiftL(s21_wideDecimal number, int shift) {
@@ -115,7 +162,7 @@ s21_wideDecimal s21_BinaryWideshiftL(s21_wideDecimal number, int shift) {
   }
 
   return number;
-}  // no leaks
+}
 
 s21_wideDecimal s21_BinaryWideshiftR(s21_wideDecimal number,
                                      int shift) {  // пока нигде не использую
@@ -156,4 +203,22 @@ void s21_invert_wideDecimal(s21_wideDecimal *value) {
   for (int i = 0; i < 8; i++) {
     value->bits[i] = ~(value->bits[i]);
   }
+}
+
+int s21_greatEqualWide(s21_wideDecimal value_1, s21_wideDecimal value_2) {
+  int retVal = 1;
+
+  for (int i = 7; i >= 0; --i) {
+    unsigned num1 = value_1.bits[i];
+    unsigned num2 = value_2.bits[i];
+
+    if (num1 > num2) {
+      break;
+    } else if (num1 < num2) {
+      retVal = 0;
+      break;
+    }
+  }
+
+  return retVal;
 }

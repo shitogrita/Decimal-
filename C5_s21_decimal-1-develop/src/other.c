@@ -1,6 +1,6 @@
 #include "main.h"
 
-void s21_printBinaryInt(unsigned intNumber) {  // старшие, средние, младшие
+void s21_printBinaryInt(unsigned intNumber) {
   char result[] = "00000000 00000000 00000000 00000000";
 
   for (int i = 34; intNumber; --i) {

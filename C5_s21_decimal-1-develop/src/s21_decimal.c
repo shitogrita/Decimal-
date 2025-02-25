@@ -1,14 +1,14 @@
 #include "main.h"
 
 void s21_printDecimal(s21_decimal number) {
-  if (1 << 31 & number.bits[3]) printf("-\n");  // подправить вывод знака
+  if (1 << 31 & number.bits[3]) printf("-\n");
 
   for (int i = 3; i >= 0; --i) {
     s21_printBinaryInt(number.bits[i]);
   }
 
   printf("\n");
-}  // служебные, старшие, средние, младшие
+}
 
 int s21_getSign(s21_decimal number) { return s21_isSetBit(number.bits[3], 31); }
 
@@ -31,12 +31,16 @@ int s21_fillScaleSign(s21_decimal *number, int scale, int sign) {
   int retVal = OK;
 
   if (scale < 0 || scale > 28) {
-    retVal = (scale < 0) ? LOWNUMBER : BIGNUMBER;
-    // >28 -inf
-    // *number = s21_createPosInf();
-  } else if (sign < 0 || sign > 1) {
-    //retVal = WRONGSIGN;
-    // *number = s21_create();
+    if (scale < 0) {
+      *number = s21_createPosInf();
+      retVal = BIGNUMBER;
+    } else {
+      *number = s21_createNegInf();
+      retVal = LOWNUMBER;
+    }
+  } else if (sign < 0 || sign > 1) {  // обработать ошибку
+                                      // retVal = WRONGSIGN; ??
+    *number = s21_createNAN();
   } else {
     sign <<= 31;
     scale <<= 16;
@@ -52,17 +56,58 @@ int s21_createDecimal(s21_wideDecimal src, s21_decimal *result, int divCount,
 
   if (divCount > scale) {
     if (!sign) {
-      *result = s21_createPosInf();  // overflow
+      *result = s21_createPosInf();
       retVal = BIGNUMBER;
     } else {
-      *result = s21_createNegInf();  // overflow
+      *result = s21_createNegInf();
       retVal = LOWNUMBER;
     }
   } else {
     *result = s21_WideDecimalToDecimal(src);
     *result = s21_removeTrailingZeroPoint(*result, &scale);
     s21_fillScaleSign(result, scale - divCount, sign);
+    s21_negZeroToPos(result);
   }
+
+  return retVal;
+}
+
+void s21_negZeroToPos(s21_decimal *result) {
+  int k = 0;
+
+  for (int i = 0; i < 3; ++i) {
+    if (result->bits[i] == 0) ++k;
+  }
+
+  if (k == 3) result->bits[3] = s21_resetBit(result->bits[3], 31);
+}
+
+int s21_returnError(s21_decimal value_1, s21_decimal value_2,
+                    s21_decimal *result) {
+  int retVal = OK;
+
+  if (s21_getSign(value_1) || s21_getSign(value_2)) {
+    *result = s21_createNegInf();
+    retVal = LOWNUMBER;
+  } else {
+    *result = s21_createPosInf();
+    retVal = BIGNUMBER;
+  }
+
+  return retVal;
+}
+
+int s21_checkDivZero(s21_decimal number) {
+  int retVal = OK;
+  char k = 0;
+
+  for (int i = 0; i < 3; ++i) {
+    if (number.bits[i] == 0) {
+      ++k;
+    }
+  }
+
+  if (k == 3) retVal = DIVBYZERO;
 
   return retVal;
 }
